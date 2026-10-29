@@ -1,0 +1,8 @@
+.ldpos { color: #302730; }
+.ldpos * { box-sizing: border-box; }
+.ldpos-cart-scroll { scrollbar-width: thin; scrollbar-color: #f1c8d7 transparent; }
+.ldpos-product { animation: luda-pos-fade .35s both; }
+.ldpos-modal > div { animation: luda-pos-pop .24s both; }
+@keyframes luda-pos-pop { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes luda-pos-fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .ldpos * { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

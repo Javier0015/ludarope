@@ -1,0 +1,14 @@
+# Añadir estas líneas al .gitignore existente en la raíz, sin sustituirlo.
+**/node_modules/
+**/dist/
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.production.example
+**/uploads/
+**/storage/
+**/backups/
+*.dump
+*.backup
+*.sql.gz
+*.log

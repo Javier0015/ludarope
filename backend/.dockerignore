@@ -1,0 +1,17 @@
+node_modules
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+!.env.production.example
+npm-debug.log*
+coverage
+*.log
+uploads
+storage
+backups
+*.sql
+*.dump
+*.backup
+Dockerfile*

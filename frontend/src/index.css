@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+/* Paleta oficial LUDAROPE para todas las pantallas */
+@theme {
+  --color-luda-white: #FEFEFE;
+  --color-luda-pink: #FC4D84;
+  --color-luda-coral: #FE714B;
+  --color-luda-orange: #FF751F;
+  --color-luda-gold: #E7AA44;
+  --color-luda-ink: #272027;
+}
+
+:root {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #272027;
+  background: #FEFEFE;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+/* La plantilla inicial de Vite no debe limitar el ancho del sistema. */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { width: 100%; min-height: 100%; margin: 0; }
+#root { min-width: 0; }
+body { overflow-x: hidden; }

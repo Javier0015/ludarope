@@ -1,0 +1,81 @@
+name: ludarope
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-ludarope_db}
+      POSTGRES_USER: ${DB_USER:-ludarope_app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
+    volumes:
+      # PostgreSQL 18 usa /var/lib/postgresql, no /var/lib/postgresql/data
+      - ludarope_postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - datos
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      # Variables comunes; confirma los nombres exactos en backend/config/db.js
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${DB_NAME:-ludarope_db}
+      PGUSER: ${DB_USER:-ludarope_app}
+      PGPASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-ludarope_db}
+      DB_USER: ${DB_USER:-ludarope_app}
+      DB_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env}
+      CORS_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8081}
+      FRONTEND_URL: ${PUBLIC_ORIGIN:-http://localhost:8081}
+    volumes:
+      # Ajustar si multer/sharp guarda las fotos en una ruta distinta.
+      - ludarope_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "3001"
+    networks:
+      - datos
+      - web
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    restart: unless-stopped
+    ports:
+      # Por defecto solo escucha en el servidor; exponer detrás de HTTPS.
+      # Para demo dentro de una red protegida: HOST_BIND_IP=0.0.0.0
+      - "${HOST_BIND_IP:-127.0.0.1}:${HTTP_PORT:-8081}:80"
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - web
+
+volumes:
+  ludarope_postgres:
+  ludarope_uploads:
+
+networks:
+  datos:
+    internal: true
+  web:
