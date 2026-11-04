@@ -341,7 +341,7 @@ export default function POS() {
             <div className="grid gap-4 sm:grid-cols-[1fr_1fr_auto]">
               <label className="block"><span className="mb-2 block text-[11px] font-black uppercase tracking-[.13em] text-[#806A75]">Sucursal</span>
                 <div className="flex items-center gap-2 rounded-xl border border-[#F0DBE2] bg-white px-3 focus-within:border-[#FC4D84]"><Store size={18} className="text-[#FC4D84]"/>
-                  <select disabled={!rolAdmin || sucursales.length < 2 || Boolean(sesion)} value={idSucursal} onChange={(e) => setIdSucursal(e.target.value)} className="w-full min-w-0 bg-white py-3 text-sm font-bold text-[#3B2E35] outline-none disabled:opacity-80">
+                  <select disabled={!rolAdmin || sucursales.length < 2} value={idSucursal} onChange={(e) => setIdSucursal(e.target.value)} className="w-full min-w-0 bg-white py-3 text-sm font-bold text-[#3B2E35] outline-none disabled:opacity-80">
                     {!idSucursal && <option value="">Seleccionar sucursal</option>}
                     {sucursales.map((s) => <option key={s.id_sucursal} value={s.id_sucursal}>{s.nombre}</option>)}
                   </select><ChevronDown size={14} className="text-[#B49CA6]"/>
@@ -349,7 +349,7 @@ export default function POS() {
               </label>
               <label className="block"><span className="mb-2 block text-[11px] font-black uppercase tracking-[.13em] text-[#806A75]">Caja física</span>
                 <div className="flex items-center gap-2 rounded-xl border border-[#F0DBE2] bg-white px-3 focus-within:border-[#FC4D84]"><Wallet size={18} className="text-[#FC4D84]"/>
-                  <select disabled={Boolean(sesion)} value={idCaja} onChange={(e) => setIdCaja(e.target.value)} className="w-full min-w-0 bg-white py-3 text-sm font-bold text-[#3B2E35] outline-none disabled:opacity-80">
+                  <select disabled={!rolAdmin && Boolean(sesion)} value={idCaja} onChange={(e) => setIdCaja(e.target.value)} className="w-full min-w-0 bg-white py-3 text-sm font-bold text-[#3B2E35] outline-none disabled:opacity-80">
                     {!cajas.length && <option value="">Sin caja asignada</option>}
                     {cajas.map(c => <option value={c.id_caja} key={c.id_caja}>{c.nombre}{c.sesion_abierta && !sesion ? ' · en uso' : ''}</option>)}
                   </select><ChevronDown size={14} className="text-[#B49CA6]"/>

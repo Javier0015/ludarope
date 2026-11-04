@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import api from '../../api/axios';
 import { useAuth } from '../../context/AuthContext';
-
 const ROSA = '#FC4D84';
 // Mostrar una copia histórica guardada en BD. Para ventas anteriores a la migración
 // puede mostrarse la fotografía actual si todavía existe en el catálogo.
@@ -22,7 +21,6 @@ const fotosPrenda = (item) => {
     .filter(ruta => typeof ruta === 'string' && /^\/uploads\/prendas\/[a-zA-Z0-9_-]+\.webp$/.test(ruta))
     .slice(0, 4).map(ruta => `${ORIGEN_API}${ruta}`);
 };
-
 function FotoPrendaVendida({ item, alAmpliar }) {
   const [fallo, setFallo] = useState(false);
   useEffect(() => setFallo(false), [item?.id_detalle, item?.fotos_snapshot_base64, item?.fotos_actuales]);
@@ -37,12 +35,10 @@ function FotoPrendaVendida({ item, alAmpliar }) {
     <span className="absolute inset-0 flex items-center justify-center bg-black/0 text-white opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100"><ZoomIn size={22}/></span>
   </button>;
 }
-
 const estilosInput = 'w-full min-w-0 rounded-2xl border border-[#EFDCE3] bg-white px-4 py-3 text-sm font-semibold text-[#45343E] outline-none transition focus:border-[#FC4D84] focus:ring-4 focus:ring-[#FC4D84]/10';
 const vacio = { buscar: '', desde: '', hasta: '', id_sucursal: '', id_usuario: '', metodo: '', estado: '' };
 const metodos = ['EFECTIVO', 'DEBITO', 'CREDITO', 'TRANSFERENCIA'];
 const nombresPago = { EFECTIVO: 'Efectivo', DEBITO: 'Débito', CREDITO: 'Crédito', TRANSFERENCIA: 'Transferencia' };
-
 const formatoMoneda = (v) => Number(v || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 const formatoFecha = (f, soloFecha = false) => f ? new Intl.DateTimeFormat('es-MX', {
   timeZone: 'America/Mexico_City', dateStyle: 'medium', ...(soloFecha ? {} : { timeStyle: 'short' }),
@@ -51,8 +47,18 @@ const diaLocal = (hace = 0) => {
   const f = new Date(); f.setDate(f.getDate() - hace);
   return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`;
 };
-const predeterminado = () => ({ ...vacio, desde: diaLocal(29), hasta: diaLocal() });
+const predeterminado = (idSucursal = '') => ({
+  ...vacio,
+  desde: diaLocal(29),
+  hasta: diaLocal(),
+  id_sucursal: String(idSucursal || ''),
+});
 
+const sucursalEstaActiva = (s) => {
+  if (s.activa === true || s.activa === 1) return true;
+  return ['1', 'TRUE', 'T', 'S', 'SI', 'SÍ', 'ACTIVA', 'ACTIVE']
+    .includes(String(s.activa ?? '').trim().toUpperCase());
+};
 function Pago({ metodo }) {
   const estilos = {
     EFECTIVO: 'bg-emerald-50 text-emerald-700 border-emerald-100',
@@ -82,7 +88,6 @@ function Kpi({ icono: Icono, titulo, valor, detalle, tono = 'pink' }) {
     <p className="mt-1 text-xs text-[#98838F]">{detalle}</p>
   </div>;
 }
-
 function Campo({ titulo, children, className = '' }) {
   return <label className={`min-w-0 ${className}`}>
     <span className="mb-1.5 block text-xs font-extrabold text-[#6C5964]">{titulo}</span>
@@ -96,7 +101,6 @@ function Vacante({ mensaje }) {
     <p className="text-sm text-[#94808B]">Intenta modificar los filtros o consultar otro periodo.</p>
   </div>;
 }
-
 async function descargarArchivo(path, nombre, mime) {
   const respuesta = await api.get(path, { responseType: 'blob' });
   const blob = new Blob([respuesta.data], { type: mime });
@@ -109,7 +113,6 @@ async function descargarArchivo(path, nombre, mime) {
   enlace.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
-
 async function mensajeError(e, defecto) {
   const contenido = e?.response?.data;
   if (contenido instanceof Blob) {
@@ -117,14 +120,20 @@ async function mensajeError(e, defecto) {
   }
   return contenido?.mensaje || e?.message || defecto;
 }
-
 export default function HistorialVentas() {
   const { usuario } = useAuth();
-  const admin = String(usuario?.rol || '').toUpperCase() === 'ADMIN';
+  const rol = String(usuario?.rol || '').trim().toUpperCase();
+  const admin = rol === 'ADMIN';
+  const cajero = rol === 'CAJERO';
+  const puedeConsultar = admin || cajero;
+  // El backend devuelve solo las sucursales autorizadas para el usuario.
   const [filtros, setFiltros] = useState(predeterminado);
   const [aplicados, setAplicados] = useState(predeterminado);
   const [sucursales, setSucursales] = useState([]);
+  const [cargandoSucursales, setCargandoSucursales] = useState(true);
   const [cajeros, setCajeros] = useState([]);
+  const [cajaAsignada, setCajaAsignada] = useState(null);
+  const [errorAlCargarFiltros, setErrorAlCargarFiltros] = useState(false);
   const [ventas, setVentas] = useState([]);
   const [resumen, setResumen] = useState(null);
   const [pagos, setPagos] = useState([]);
@@ -139,25 +148,72 @@ export default function HistorialVentas() {
   const [descargando, setDescargando] = useState(false);
   const [accion, setAccion] = useState('');
   const [refresco, setRefresco] = useState(0);
-
   const params = useMemo(() => {
     const p = { pagina, limite: 15 };
     Object.entries(aplicados).forEach(([k, v]) => { if (String(v ?? '').trim()) p[k] = String(v).trim(); });
     return p;
   }, [aplicados, pagina]);
-
   useEffect(() => {
-    if (!admin) return;
+    if (!puedeConsultar) {
+      setCargandoSucursales(false);
+      return;
+    }
     let vigente = true;
+    setCargandoSucursales(true);
+    setErrorAlCargarFiltros(false);
+
     api.get('/admin/ventas/filtros').then(({ data }) => {
       if (!vigente) return;
-      setSucursales(data.sucursales || []);
-      setCajeros(data.cajeros || []);
-    }).catch((e) => { if (vigente) console.warn('Filtros de ventas:', e); });
-    return () => { vigente = false; };
-  }, [admin]);
+      const activas = (data.sucursales || []).filter(sucursalEstaActiva);
+      const primera = activas[0]?.id_sucursal != null
+        ? String(activas[0].id_sucursal)
+        : '';
 
+      setSucursales(activas);
+      setCajeros(data.cajeros || []);
+      setCajaAsignada(data.caja_asignada || null);
+      setErrorAlCargarFiltros(false);
+      setError('');
+      setFiltros(prev => ({ ...prev, id_sucursal: primera }));
+      setAplicados(prev => ({ ...prev, id_sucursal: primera }));
+      setPagina(1);
+
+      if (!primera) {
+        setVentas([]);
+        setResumen(null);
+        setPagos([]);
+        setPaginacion({ paginas: 0, total: 0 });
+        setError(cajero
+          ? 'Tu cuenta no tiene una sucursal activa asignada para consultar ventas.'
+          : 'No hay sucursales activas disponibles.');
+      }
+    }).catch((e) => {
+      if (!vigente) return;
+      console.error('Filtros de ventas:', e);
+      setSucursales([]);
+      setCajeros([]);
+      setCajaAsignada(null);
+      setErrorAlCargarFiltros(true);
+      setVentas([]);
+      setResumen(null);
+      setPagos([]);
+      setPaginacion({ paginas: 0, total: 0 });
+      setFiltros(prev => ({ ...prev, id_sucursal: '' }));
+      setAplicados(prev => ({ ...prev, id_sucursal: '' }));
+      const estado = e.response?.status;
+      const detalle = e.response?.data?.mensaje;
+      setError(detalle || (estado
+        ? `No se pudieron consultar las sucursales (HTTP ${estado}). Revisa los permisos de /admin/ventas/filtros.`
+        : 'No se pudo conectar con el servidor para consultar las sucursales.'));
+    }).finally(() => {
+      if (vigente) setCargandoSucursales(false);
+    });
+
+    return () => { vigente = false; };
+  }, [puedeConsultar, cajero]);
   const cargarVentas = useCallback(async (cancelado = () => false) => {
+    // Nunca solicitar ventas de todas las sucursales por omitir el filtro.
+    if (!aplicados.id_sucursal) return;
     try {
       setCargando(true); setError('');
       const { data } = await api.get('/admin/ventas', { params });
@@ -169,15 +225,13 @@ export default function HistorialVentas() {
     } catch (e) {
       if (!cancelado()) { setError(e.response?.data?.mensaje || 'No se pudo consultar el historial.'); setVentas([]); }
     } finally { if (!cancelado()) setCargando(false); }
-  }, [params]);
-
+  }, [params, aplicados.id_sucursal]);
   useEffect(() => {
-    if (!admin) return;
+    if (!puedeConsultar || !aplicados.id_sucursal) return;
     let cancelado = false;
     cargarVentas(() => cancelado);
     return () => { cancelado = true; };
-  }, [admin, cargarVentas, refresco]);
-
+  }, [puedeConsultar, cargarVentas, refresco, aplicados.id_sucursal]);
   useEffect(() => {
     if (!detalle) return undefined;
     const anterior = document.body.style.overflow;
@@ -186,17 +240,28 @@ export default function HistorialVentas() {
     window.addEventListener('keydown', alCerrar);
     return () => { document.body.style.overflow = anterior; window.removeEventListener('keydown', alCerrar); };
   }, [detalle]);
-
   const enviarFiltros = (e) => {
     e.preventDefault();
+    if (!filtros.id_sucursal) {
+      return Swal.fire('Sin sucursal activa', 'No hay una sucursal activa seleccionada.', 'warning');
+    }
     if (filtros.desde && filtros.hasta && filtros.desde > filtros.hasta) {
       return Swal.fire('Fechas inválidas', 'La fecha inicial no puede ser mayor a la fecha final.', 'warning');
     }
     setPagina(1); setAplicados({ ...filtros });
   };
-  const limpiar = () => { const f = predeterminado(); setFiltros(f); setAplicados(f); setPagina(1); };
+  const limpiar = () => { const f = predeterminado(sucursales[0]?.id_sucursal); setFiltros(f); setAplicados(f); setPagina(1); };
   const modificar = (k, v) => setFiltros(p => ({ ...p, [k]: v }));
-
+  // La interfaz solo ofrece cancelar al cajero si la venta es propia, de su
+  // caja asignada y de una sesión abierta. El backend vuelve a validar todo.
+  const puedeCancelarDetalle = Boolean(
+    detalle?.venta?.estado === 'COMPLETADA' &&
+    detalle?.venta?.estado_sesion === 'ABIERTA' &&
+    (admin || (cajero && cajaAsignada &&
+      Number(detalle.venta.id_usuario) === Number(usuario?.id_usuario) &&
+      Number(detalle.venta.id_sucursal) === Number(cajaAsignada.id_sucursal) &&
+      Number(detalle.venta.id_caja) === Number(cajaAsignada.id_caja)))
+  );
   const abrirDetalle = async (id) => {
     setCargandoDetalle(true);
     try {
@@ -206,7 +271,7 @@ export default function HistorialVentas() {
     finally { setCargandoDetalle(false); }
   };
   const cancelarVenta = async (venta) => {
-    if (cancelando || venta?.estado !== 'COMPLETADA') return;
+    if (!puedeCancelarDetalle || cancelando || venta?.estado !== 'COMPLETADA') return;
     if (venta.estado_sesion !== 'ABIERTA') {
       return Swal.fire('Caja cerrada', 'La venta pertenece a una caja cerrada. No se modificará un corte anterior; deberá procesarse como devolución en el módulo correspondiente.', 'info');
     }
@@ -245,7 +310,6 @@ export default function HistorialVentas() {
       Swal.fire('No fue posible cancelar', await mensajeError(e, 'No se modificó la venta.'), 'error');
     } finally { setCancelando(false); }
   };
-
   const descargarPdf = async (venta) => {
     if (venta.estado !== 'COMPLETADA') return Swal.fire('Comprobante no disponible', 'Los tickets de ventas canceladas no se descargan como comprobantes vigentes.', 'info');
     if (descargando) return;
@@ -282,6 +346,9 @@ export default function HistorialVentas() {
     finally { setAccion(''); }
   };
   const exportar = async () => {
+    if (!aplicados.id_sucursal) {
+      return Swal.fire('Sin sucursal activa', 'Selecciona una sucursal activa antes de exportar.', 'warning');
+    }
     try {
       setDescargando(true); setAccion('csv');
       const p = new URLSearchParams();
@@ -290,9 +357,7 @@ export default function HistorialVentas() {
     } catch (e) { Swal.fire('No se pudo exportar', await mensajeError(e, 'Intenta acortar el periodo.'), 'error'); }
     finally { setDescargando(false); setAccion(''); }
   };
-
-  if (!admin) return <div className="rounded-2xl border border-red-100 bg-white p-8 text-center font-bold text-rose-700">Este módulo es exclusivo para ADMIN.</div>;
-
+  if (!puedeConsultar) return <div className="rounded-2xl border border-red-100 bg-white p-8 text-center font-bold text-rose-700">No tienes permiso para consultar el historial de ventas.</div>;
   return <div className="min-w-0 space-y-5 pb-10 sm:space-y-6">
     <style>{`.swal2-container { z-index: 10050 !important; }`}</style>
     <section className="relative overflow-hidden rounded-[2rem] border border-[#F2DDE5] bg-white p-5 shadow-[0_14px_45px_rgba(83,42,64,.045)] sm:p-7">
@@ -300,44 +365,43 @@ export default function HistorialVentas() {
       <div className="relative flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[.2em] text-[#FC4D84]">LUDAROPE / Administración</p>
+            <p className="text-[10px] font-black uppercase tracking-[.2em] text-[#FC4D84]">{cajero ? 'LUDAROPE / Ventas y caja' : 'LUDAROPE / Administración'}</p>
             <h1 className="mt-2 font-serif text-[clamp(2rem,3vw,3rem)] font-semibold leading-none text-[#342A32]">Historial de ventas<span className="text-[#FC4D84]">.</span></h1>
             <p className="mt-1 text-sm text-[#917D88]">Consulta ventas, formas de pago y comprobantes digitales por sucursal.</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" disabled={cargando} onClick={() => setRefresco(n => n + 1)} className="inline-flex items-center gap-2 rounded-xl border border-[#EECFD9] bg-white px-4 py-3 text-xs font-extrabold text-[#BB4470] transition hover:bg-[#FFF3F7] disabled:opacity-50"><RefreshCw size={16} className={cargando ? 'animate-spin' : ''}/> Actualizar</button>
-          <button type="button" disabled={descargando} onClick={exportar} className="inline-flex items-center gap-2 rounded-xl bg-[#FC4D84] px-4 py-3 text-xs font-extrabold text-white shadow-[0_9px_20px_rgba(252,77,132,.16)] transition hover:bg-[#E53974] disabled:opacity-50">{accion === 'csv' ? <Loader2 size={16} className="animate-spin"/> : <FileSpreadsheet size={16}/>} Exportar CSV</button>
+          <button type="button" disabled={descargando || !aplicados.id_sucursal} onClick={exportar} className="inline-flex items-center gap-2 rounded-xl bg-[#FC4D84] px-4 py-3 text-xs font-extrabold text-white shadow-[0_9px_20px_rgba(252,77,132,.16)] transition hover:bg-[#E53974] disabled:opacity-50">{accion === 'csv' ? <Loader2 size={16} className="animate-spin"/> : <FileSpreadsheet size={16}/>} Exportar CSV</button>
         </div>
       </div>
     </section>
-
     <form onSubmit={enviarFiltros} className="rounded-[1.8rem] border border-[#F1DDE5] bg-[#FFF9FB] p-4 sm:p-5">
       <div className="mb-4 flex items-center gap-2"><Filter size={18} className="text-[#FC4D84]"/><h2 className="font-extrabold text-[#493640]">Filtros de búsqueda</h2></div>
       <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Campo titulo="Folio, prenda o cajero" className="xl:col-span-2"><div className="relative"><Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#BDA4AF]"/><input value={filtros.buscar} onChange={e => modificar('buscar',e.target.value)} placeholder="LUD-00000001, nombre o código LDR..." className={`${estilosInput} pl-11`}/></div></Campo>
         <Campo titulo="Desde"><input type="date" className={estilosInput} value={filtros.desde} onChange={e => modificar('desde',e.target.value)}/></Campo>
         <Campo titulo="Hasta"><input type="date" className={estilosInput} value={filtros.hasta} onChange={e => modificar('hasta',e.target.value)}/></Campo>
-        <Campo titulo="Sucursal"><select className={estilosInput} value={filtros.id_sucursal} onChange={e => modificar('id_sucursal',e.target.value)}><option value="">Todas las sucursales</option>{sucursales.map(s => <option value={s.id_sucursal} key={s.id_sucursal}>{s.nombre}{s.activa ? '' : ' (inactiva)'}</option>)}</select></Campo>
-        <Campo titulo="Cajero"><select className={estilosInput} value={filtros.id_usuario} onChange={e => modificar('id_usuario',e.target.value)}><option value="">Todos los cajeros</option>{cajeros.map(c => <option value={c.id_usuario} key={c.id_usuario}>{c.nombre}</option>)}</select></Campo>
+        <Campo titulo="Sucursal"><select className={estilosInput} value={filtros.id_sucursal} onChange={e => modificar('id_sucursal',e.target.value)} disabled={cargandoSucursales || sucursales.length === 0 || cajero}>{sucursales.length === 0 && <option value="">{cargandoSucursales ? 'Cargando sucursales...' : errorAlCargarFiltros ? 'Error al cargar sucursales' : 'No hay sucursales activas'}</option>}{sucursales.map(s => <option value={s.id_sucursal} key={s.id_sucursal}>{s.nombre}</option>)}</select></Campo>
+        <Campo titulo="Cajero"><select className={estilosInput} value={filtros.id_usuario} onChange={e => modificar('id_usuario',e.target.value)} disabled={cajero}><option value="">{cajero ? 'Mis ventas' : 'Todos los cajeros'}</option>{cajeros.map(c => <option value={c.id_usuario} key={c.id_usuario}>{c.nombre}</option>)}</select></Campo>
         <Campo titulo="Método de pago"><select className={estilosInput} value={filtros.metodo} onChange={e => modificar('metodo',e.target.value)}><option value="">Todos los métodos</option>{metodos.map(m => <option key={m} value={m}>{nombresPago[m]}</option>)}</select></Campo>
         <Campo titulo="Estado"><select className={estilosInput} value={filtros.estado} onChange={e => modificar('estado',e.target.value)}><option value="">Todos los estados</option><option value="COMPLETADA">Completadas</option><option value="CANCELADA">Canceladas</option></select></Campo>
       </div>
+      {cajero && cajaAsignada && <p className="mt-3 rounded-xl border border-[#F1DDE5] bg-white px-4 py-3 text-xs font-semibold text-[#8B6F7A]">
+        Caja asignada: <strong className="text-[#45343E]">{cajaAsignada.nombre}</strong> · {cajaAsignada.sucursal}. Por seguridad, solo puedes consultar tus ventas realizadas en esta caja.
+      </p>}
       <div className="mt-4 flex flex-wrap justify-end gap-2">
         <button type="button" onClick={limpiar} className="inline-flex items-center gap-2 rounded-xl border border-[#F1DCE3] bg-white px-4 py-3 text-xs font-extrabold text-[#8B6F7A]"><RotateCcw size={15}/> Restablecer</button>
-        <button type="submit" className="inline-flex items-center gap-2 rounded-xl bg-[#352B33] px-5 py-3 text-xs font-extrabold text-white transition hover:bg-[#55414E]"><Search size={15}/> Buscar ventas</button>
+        <button type="submit" disabled={!filtros.id_sucursal} className="inline-flex items-center gap-2 rounded-xl bg-[#352B33] px-5 py-3 text-xs font-extrabold text-white transition hover:bg-[#55414E]"><Search size={15}/> Buscar ventas</button>
       </div>
     </form>
-
     {error && <div role="alert" className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>}
-
     <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
       <Kpi icono={ReceiptText} titulo="Ventas completadas" valor={resumen?.completadas ?? '—'} detalle="Operaciones cobradas"/>
       <Kpi icono={TrendingUp} titulo="Total vendido" valor={resumen ? formatoMoneda(resumen.total_vendido) : '—'} detalle="Sin ventas canceladas" tono="green"/>
       <Kpi icono={Wallet} titulo="Ticket promedio" valor={resumen ? formatoMoneda(resumen.ticket_promedio) : '—'} detalle="Por venta completada" tono="orange"/>
       <Kpi icono={CircleX} titulo="Canceladas" valor={resumen?.canceladas ?? '—'} detalle="No suman al ingreso" tono="dark"/>
     </section>
-
     <section className="overflow-hidden rounded-[1.8rem] border border-[#F0DFE6] bg-white shadow-[0_14px_45px_rgba(83,42,64,.045)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#F1E4E9] px-5 py-5 sm:px-6">
         <div><h2 className="text-lg font-black text-[#382A33]">Ventas registradas</h2><p className="mt-1 text-xs text-[#9B8791]">{paginacion.total} resultado(s) en el periodo seleccionado</p></div>
@@ -375,7 +439,6 @@ export default function HistorialVentas() {
         <div className="flex gap-2"><button type="button" disabled={pagina <= 1 || cargando} onClick={() => setPagina(p => p - 1)} className="rounded-xl border border-[#F2DAE2] px-3 py-2 text-[#FC4D84] disabled:opacity-35" aria-label="Página anterior"><ChevronLeft size={19}/></button><button type="button" disabled={pagina >= paginacion.paginas || cargando} onClick={() => setPagina(p => p + 1)} className="rounded-xl border border-[#F2DAE2] px-3 py-2 text-[#FC4D84] disabled:opacity-35" aria-label="Página siguiente"><ChevronRight size={19}/></button></div>
       </div>}
     </section>
-
     <section className="rounded-[1.8rem] border border-[#F1DDE5] bg-white p-4 sm:p-6">
       <div className="flex items-center gap-2"><CreditCard size={20} className="text-[#FC4D84]"/><h2 className="font-black text-[#3E2F38]">Ventas por método de pago</h2></div>
       <p className="mt-1 text-xs text-[#A08A93]">Desglose de los pagos recibidos en las ventas completadas del filtro. En pagos mixtos cada importe se contabiliza por separado.</p>
@@ -391,7 +454,6 @@ export default function HistorialVentas() {
         })}
       </div>
     </section>
-
     {detalle && <div role="presentation" className="fixed inset-0 z-[9999] flex justify-end bg-[#241D28]/65 p-0 backdrop-blur-sm sm:p-4">
       <button type="button" onClick={() => setDetalle(null)} aria-label="Cerrar detalle" className="absolute inset-0 h-full w-full cursor-default" />
       <section role="dialog" aria-modal="true" aria-label={`Detalle de venta ${detalle.venta.folio}`} className="relative flex h-full w-full max-w-2xl flex-col overflow-hidden bg-white shadow-2xl sm:rounded-[1.8rem]">
@@ -441,16 +503,14 @@ export default function HistorialVentas() {
       <div className="flex shrink-0 flex-col gap-2 border-t border-[#F2E4E9] bg-white p-4 sm:flex-row sm:p-5">
           <button type="button" disabled={descargando || detalle.venta.estado !== 'COMPLETADA'} onClick={() => descargarPdf(detalle.venta)} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-[#EFC8D5] bg-[#FFF6F9] px-4 py-3 text-sm font-black text-[#C84373] disabled:opacity-50">{accion === `pdf-${detalle.venta.id_venta}` ? <Loader2 className="animate-spin" size={17}/> : <Download size={17}/>} Descargar PDF</button>
           <button type="button" disabled={Boolean(accion) || detalle.venta.estado !== 'COMPLETADA'} onClick={() => enviarCorreo(detalle.venta)} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#FC4D84] px-4 py-3 text-sm font-black text-white disabled:opacity-50">{accion === `email-${detalle.venta.id_venta}` ? <Loader2 size={17} className="animate-spin"/> : <Mail size={17}/>} Enviar por correo</button>
-          {detalle.venta.estado === 'COMPLETADA' && detalle.venta.estado_sesion === 'ABIERTA' && <button type="button"
+          {puedeCancelarDetalle && <button type="button"
             disabled={cancelando || Boolean(accion)} onClick={() => cancelarVenta(detalle.venta)}
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-black text-rose-700 transition hover:bg-rose-100 disabled:opacity-50">
             {cancelando ? <Loader2 size={17} className="animate-spin"/> : <Ban size={17}/>} Cancelar venta
           </button>}
         </div>
       </section>
-
       </div>}
-
       {fotoAmpliada && <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-[#241D28]/90 p-5" role="dialog" aria-modal="true" aria-label="Foto de la prenda vendida">
         <button type="button" className="absolute inset-0" onClick={() => setFotoAmpliada(null)} aria-label="Cerrar fotografía"/>
         <div className="relative max-h-[92vh] max-w-3xl text-center">
@@ -467,6 +527,5 @@ export default function HistorialVentas() {
           <p className="mt-1 text-xs text-white/70">{fotoAmpliada.historica ? 'Fotografía histórica de la venta' : 'Fotografía actual de la prenda'}</p>
         </div>
       </div>}
-
     </div>;
 }

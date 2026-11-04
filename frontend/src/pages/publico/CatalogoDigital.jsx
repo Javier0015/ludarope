@@ -18,6 +18,7 @@ import FiltrosCatalogo from '../../components/catalogo/FiltrosCatalogo';
 import {
   fotosValidas,
   moneda,
+  etiquetaOferta,
   normalizar,
   sucursalesDisponibles,
   unidadesDisponibles,
@@ -54,7 +55,7 @@ function TarjetaPrenda({ prenda, onVerDetalle, index }) {
       </div>
 
       <div className="space-y-4 p-4 pt-4 sm:p-5">
-        {(prenda.ofertas||[]).length>0 && <div className="flex flex-wrap gap-1.5">{prenda.ofertas.slice(0,3).map(o=><span key={o.id_promocion} className="rounded-full bg-[#FC4D84] px-3 py-1 text-[10px] font-black text-white">{o.etiqueta}</span>)}</div>}
+        {(prenda.ofertas||[]).length>0 && <div className="flex flex-wrap gap-1.5">{prenda.ofertas.slice(0,3).map(o=><span key={o.id_promocion} className="rounded-full bg-[#FC4D84] px-3 py-1 text-[10px] font-black text-white">{etiquetaOferta(o.etiqueta)}</span>)}</div>}
         <div>
           <div className="flex items-start justify-between gap-3">
             <h3 className="line-clamp-2 font-serif text-[1.45rem] font-semibold leading-none text-[#302730] sm:text-[1.6rem]">
@@ -78,12 +79,7 @@ function TarjetaPrenda({ prenda, onVerDetalle, index }) {
               ? <><span className="block text-xs text-[#A68A97] line-through">{moneda(prenda.precio_venta)}</span><span className="mt-1 block break-words text-[2rem] font-black leading-none text-[#FC4D84]">{moneda(prenda.precio_promocional)}</span></>
               : <span className="mt-1 block break-words text-[2rem] font-black leading-none text-[#FC4D84]">{moneda(prenda.precio_venta)}</span>}
           </div>
-          <div className="rounded-2xl border border-[#F2DDE4] bg-white px-4 py-3 shadow-sm">
-            <p className="text-[10px] font-black uppercase tracking-[.18em] text-[#A48C96]">Sucursal</p>
-            <p className="mt-1 text-sm font-bold leading-5 text-[#5C4651] break-words line-clamp-2">
-              {sucursalResumen}
-            </p>
-          </div>
+         
         </div>
 
         {(prenda.ofertas||[]).some(o=>o.tipo==='NXM') && <p className="text-xs font-semibold text-[#B94372]">Oferta combinable al completar las prendas participantes. Consulta condiciones en tienda.</p>}

@@ -6,10 +6,8 @@ const pool = require('../config/db');
 const { verificarToken, autorizarRoles } = require('../middlewares/authMiddleware');
 const { generarTicketPdf, enviarTicketPorCorreo } = require('../services/ticketService');
 const { cargarPromociones, calcularPromociones } = require('../services/promocionesService');
-
 const router = express.Router();
 router.use(verificarToken, autorizarRoles('ADMIN', 'CAJERO'));
-
 const id = (v) => /^\d+$/.test(String(v ?? '')) && Number.isSafeInteger(Number(v)) && Number(v) > 0 ? Number(v) : null;
 const uuidValido = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(s || ''));
 const centavos = (v) => {
@@ -24,7 +22,6 @@ const errorJson = (res, status, mensaje) => res.status(status).json({ ok: false,
 const estaAutorizadoSucursal = (req, sucursal) => req.usuario.rol === 'ADMIN' || Number(req.usuario.id_sucursal) === sucursal;
 const usuarioId = (req) => Number(req.usuario.id_usuario);
 const tiposPago = new Set(['EFECTIVO', 'DEBITO', 'CREDITO', 'TRANSFERENCIA']);
-
 // Miniatura histórica del artículo vendido. Guardarla en DB evita que cambie
 // o desaparezca al editar/eliminar las fotos del catálogo posteriormente.
 const directorioFotos = path.resolve(__dirname, '../../uploads/prendas');
@@ -43,13 +40,10 @@ async function fotoHistorica(ruta) {
     return null;
   }
 }
-
-
 function resolverSucursal(req, s) {
   const n = id(s);
   return n && estaAutorizadoSucursal(req, n) ? n : null;
 }
-
 router.get('/sucursales', async (req, res) => {
   try {
     const cajero = req.usuario.rol === 'CAJERO';
@@ -57,7 +51,6 @@ router.get('/sucursales', async (req, res) => {
     res.json({ ok: true, sucursales: r.rows });
   } catch (e) { console.error('pos/sucursales', e); errorJson(res, 500, 'No se pudieron cargar las sucursales'); }
 });
-
 router.get('/prendas', async (req, res) => {
   const sucursal = resolverSucursal(req, req.query.id_sucursal);
   if (!sucursal) return errorJson(res, 403, 'Sucursal no autorizada');
@@ -90,27 +83,38 @@ router.get('/prendas', async (req, res) => {
     res.json({ ok: true, prendas }); // Nunca devolver costos.
   } catch (e) { console.error('pos/prendas', e); errorJson(res, 500, 'No se pudieron consultar las prendas'); }
 });
-
 // El POS sólo trabaja con sesiones ligadas a una caja física configurada.
 router.get('/sesion', async (req, res) => {
   const sucursal = resolverSucursal(req, req.query.id_sucursal);
   const caja = id(req.query.id_caja);
   if (!sucursal || !caja) return errorJson(res, 400, 'Selecciona una sucursal y una caja.');
   try {
-    const r = await pool.query(`SELECT cs.id_sesion,cs.id_sucursal,cs.id_caja,cs.monto_inicial,cs.fecha_apertura,cs.estado
-      FROM caja_sesiones cs JOIN cajas c ON c.id_caja=cs.id_caja
-      WHERE cs.id_usuario=$1 AND cs.id_sucursal=$2 AND cs.id_caja=$3
-        AND c.activo=TRUE AND cs.estado='ABIERTA'
-      ORDER BY cs.fecha_apertura DESC LIMIT 1`, [usuarioId(req), sucursal, caja]);
+    // ADMIN puede operar una caja abierta por otro usuario; CAJERO solo su caja/sesión.
+    // Se conserva el usuario que abrió la sesión para permitir auditoría.
+    const r = await pool.query(`
+      SELECT cs.id_sesion, cs.id_sucursal, cs.id_caja,
+             cs.id_usuario AS id_usuario_apertura,
+             cs.monto_inicial, cs.fecha_apertura, cs.estado
+      FROM caja_sesiones cs
+      JOIN cajas c ON c.id_caja = cs.id_caja
+      JOIN sucursales s ON s.id_sucursal = cs.id_sucursal
+      WHERE cs.id_sucursal = $1
+        AND cs.id_caja = $2
+        AND c.id_sucursal = cs.id_sucursal
+        AND c.activo = TRUE
+        AND s.activa = TRUE
+        AND cs.estado = 'ABIERTA'
+        AND ($3::boolean = TRUE OR
+             (cs.id_usuario = $4 AND c.id_usuario_asignado = $4))
+      ORDER BY cs.fecha_apertura DESC LIMIT 1
+    `, [sucursal, caja, req.usuario.rol === 'ADMIN', usuarioId(req)]);
     res.json({ ok: true, sesion: r.rows[0] || null });
   } catch (e) { console.error('pos/sesion', e); errorJson(res, 500, 'No se pudo consultar la sesión de caja'); }
 });
-
 // La apertura/cierre viven exclusivamente en /api/caja.
 // No permitir rutas anteriores que omiten la identificación de la caja física.
 router.post('/sesion/abrir', (_req,res) => errorJson(res, 410, 'Usa /api/caja/abrir con id_caja.'));
 router.post('/sesion/cerrar', (_req,res) => errorJson(res, 410, 'Usa /api/caja/cerrar con id_sesion.'));
-
 router.post('/ventas', async (req, res) => {
   const sucursal = resolverSucursal(req, req.body?.id_sucursal);
   const sesion = id(req.body?.id_sesion);
@@ -120,7 +124,6 @@ router.post('/ventas', async (req, res) => {
   if (!sucursal || !sesion || !uuidValido(clave) || !Array.isArray(items) || items.length < 1 || items.length > 80 || !Array.isArray(pagos) || pagos.length < 1 || pagos.length > 4) {
     return errorJson(res, 400, 'Venta inválida. Verifica sucursal, caja, prendas y pagos.');
   }
-
   const agrupados = new Map();
   for (const item of items) {
     const prenda = id(item.id_prenda);
@@ -130,7 +133,6 @@ router.post('/ventas', async (req, res) => {
   }
   const ordenados = [...agrupados].sort(([a], [b]) => a - b);
   if (ordenados.some(([, c]) => c > 500) || ordenados.reduce((sum,[,q])=>sum+q,0)>500) return errorJson(res, 400, 'Máximo 500 unidades por operación');
-
   const medios = new Map();
   for (const p of pagos) {
     if (!tiposPago.has(p.metodo) || medios.has(p.metodo)) return errorJson(res, 400, 'Métodos de pago duplicados o inválidos');
@@ -153,14 +155,22 @@ router.post('/ventas', async (req, res) => {
       if (repetida.rows[0].estado !== 'COMPLETADA') return errorJson(res, 409, 'La venta anterior fue cancelada. Inicia un cobro nuevo.');
       return res.json({ ok: true, venta: repetida.rows[0], repetida: true });
     }
-    const caja = await client.query(`SELECT cs.id_sesion FROM caja_sesiones cs
-      JOIN cajas c ON c.id_caja=cs.id_caja
-      WHERE cs.id_sesion=$1 AND cs.id_sucursal=$2
-      AND cs.id_usuario=$3 AND cs.estado='ABIERTA' AND c.activo=TRUE
-      AND ($4::boolean=TRUE OR c.id_usuario_asignado=$3)
-      FOR SHARE OF cs`, [sesion, sucursal, usuarioId(req), req.usuario.rol==='ADMIN']);
+    // La sesión debe continuar abierta al cobrar. ADMIN puede usar una sesión
+    // ajena de la sucursal seleccionada; CAJERO solo su propia caja asignada.
+    // La venta sigue registrando el operador real en ventas.id_usuario.
+    const caja = await client.query(`
+      SELECT cs.id_sesion FROM caja_sesiones cs
+      JOIN cajas c ON c.id_caja = cs.id_caja
+      WHERE cs.id_sesion = $1
+        AND cs.id_sucursal = $2
+        AND c.id_sucursal = cs.id_sucursal
+        AND cs.estado = 'ABIERTA'
+        AND c.activo = TRUE
+        AND ($4::boolean = TRUE OR
+             (cs.id_usuario = $3 AND c.id_usuario_asignado = $3))
+      FOR SHARE OF cs
+    `, [sesion, sucursal, usuarioId(req), req.usuario.rol === 'ADMIN']);
     if (!caja.rowCount) { await client.query('ROLLBACK'); transaccionAbierta = false; return errorJson(res, 409, 'Primero abre tu caja para cobrar'); }
-
     const datos = [];
     let totalCentavos = 0;
     for (const [idPrenda, cantidad] of ordenados) {
@@ -249,7 +259,6 @@ router.post('/ventas', async (req, res) => {
     errorJson(res, e.code === '55P03' ? 409 : 500, e.code === '55P03' ? 'Inventario ocupado, intenta de nuevo' : 'No fue posible registrar la venta');
   } finally { client.release(); }
 });
-
 router.get('/ventas', async (req, res) => {
   const sucursal = resolverSucursal(req, req.query.id_sucursal);
   if (!sucursal) return errorJson(res, 403, 'Sucursal no autorizada');
@@ -261,7 +270,6 @@ router.get('/ventas', async (req, res) => {
     res.json({ ok: true, ventas: r.rows });
   } catch (e) { console.error('pos/historial', e); errorJson(res, 500, 'No se pudo consultar el historial'); }
 });
-
 // Acceso a los datos históricos sin exponer costo_unitario_venta.
 async function cargarTicket(req, idVenta) {
   const resultado = await pool.query(`SELECT v.id_venta,v.folio,v.fecha_venta,v.subtotal,v.descuento_total,v.total,
@@ -275,7 +283,6 @@ async function cargarTicket(req, idVenta) {
   const pag = await pool.query('SELECT metodo,monto FROM ventas_pagos WHERE id_venta=$1 ORDER BY id_pago', [idVenta]);
   return { venta, detalles: det.rows, pagos: pag.rows };
 }
-
 router.get('/ventas/:id/ticket.pdf', async (req, res) => {
   const ventaId = id(req.params.id);
   if (!ventaId) return errorJson(res, 400, 'Folio inválido');
@@ -288,7 +295,6 @@ router.get('/ventas/:id/ticket.pdf', async (req, res) => {
     res.send(pdf);
   } catch (e) { console.error('pos/ticket.pdf', e); errorJson(res, 500, 'No se pudo crear el comprobante'); }
 });
-
 router.post('/ventas/:id/enviar-ticket', async (req, res) => {
   const ventaId = id(req.params.id);
   const correo = String(req.body?.correo || '').trim().toLowerCase();
@@ -313,5 +319,4 @@ router.post('/ventas/:id/enviar-ticket', async (req, res) => {
     }
   } catch (e) { console.error('pos/enviar-ticket', e); errorJson(res, 500, 'No se pudo procesar el envío'); }
 });
-
 module.exports = router;

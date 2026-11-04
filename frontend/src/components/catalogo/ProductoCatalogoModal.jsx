@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, MapPin, Package, Shirt, X } from 'lucide-react';
 import CarruselPrenda from './CarruselPrenda';
-import { fotosValidas, moneda, sucursalesDisponibles, unidadesDisponibles } from './catalogoUtils';
+import { fotosValidas, moneda, etiquetaOferta, sucursalesDisponibles, unidadesDisponibles } from './catalogoUtils';
 
 export default function ProductoCatalogoModal({ prenda, onCerrar }) {
   const cerrarRef = useRef(null);
@@ -34,14 +34,14 @@ export default function ProductoCatalogoModal({ prenda, onCerrar }) {
           <div className="relative bg-[#FFF0F5] p-3 sm:p-5">
             <CarruselPrenda key={prenda.id_prenda} formato="modal" imagenes={fotos} nombre={prenda.nombre}
               intervalo={5400} className="rounded-[1.2rem] sm:rounded-[1.5rem]" />
-            {fotos.length > 1 && <p className="mt-2 text-center text-xs font-medium text-[#927983]">Las fotografías cambian automáticamente. También puedes elegir una miniatura o utilizar las flechas.</p>}
+            {fotos.length > 1 && <p className="mt-2 text-center text-xs font-medium text-[#927983]"></p>}
           </div>
           <div className="min-w-0 p-5 sm:p-8 lg:py-11">
             <div className="inline-flex items-center gap-2 rounded-full bg-[#FFF0F5] px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-widest text-[#DE366F]">
               <Shirt size={13}/>{prenda.categoria}
             </div>
             <h2 id="detalle-prenda-titulo" className="mt-4 break-words font-serif text-3xl font-semibold leading-tight text-[#302730] sm:text-4xl">{prenda.nombre}</h2>
-            {ofertas.length>0 && <div className="mt-3 flex flex-wrap gap-2">{ofertas.map(o=><span key={o.id_promocion} className="rounded-full bg-[#FC4D84] px-3 py-1 text-xs font-black text-white">{o.etiqueta} · {o.nombre}</span>)}</div>}
+            {ofertas.length>0 && <div className="mt-3 flex flex-wrap gap-2">{ofertas.map(o=><span key={o.id_promocion} className="rounded-full bg-[#FC4D84] px-3 py-1 text-xs font-black text-white">{etiquetaOferta(o.etiqueta)} · {o.nombre}</span>)}</div>}
             {prenda.precio_promocional!==null && prenda.precio_promocional!==undefined && <p className="mt-2 text-sm text-[#A18C97] line-through">{moneda(prenda.precio_venta)}</p>}
             <p className="mt-4 text-3xl font-black text-[#FC4D84]">{moneda(prenda.precio_promocional ?? prenda.precio_venta)}</p>
             <div className="mt-5 flex flex-wrap gap-2">

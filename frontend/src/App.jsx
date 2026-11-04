@@ -18,9 +18,6 @@ import HistorialVentas from './pages/ventas/HistorialVentas';
 import Configuracion from './pages/configuracion/Configuracion';
 import Ofertas from './pages/ofertas/Ofertas';
 
-
-
-
 function RutaInicial() {
   const { usuario, cargandoSesion } = useAuth();
 
@@ -59,14 +56,15 @@ export default function App() {
         <Route path="dashboard" element={<SoloAdmin><Dashboard /></SoloAdmin>} />
         <Route path="pos" element={<POS />} />
         <Route path="caja" element={<RutaProtegida roles={['ADMIN', 'CAJERO']}><Caja /></RutaProtegida>} />
-        <Route path="configuracion-cajas" element={<RutaProtegida roles={['ADMIN']}><AdministrarCajas /></RutaProtegida>} />        <Route path="inventario" element={<Inventario />} />
+        <Route path="configuracion-cajas" element={<SoloAdmin><AdministrarCajas /></SoloAdmin>} />
+        <Route path="inventario" element={<Inventario />} />
         <Route path="costos" element={<SoloAdmin><CostosPrendas /></SoloAdmin>} />
         <Route path="stock-sucursales" element={<SoloAdmin><ModuloPendiente titulo="Stock por sucursal" /></SoloAdmin>} />
         <Route path="categorias" element={<SoloAdmin><ModuloPendiente titulo="Categorías" /></SoloAdmin>} />
-        <Route path="ofertas" element={<RutaProtegida roles={['ADMIN']}><Ofertas /></RutaProtegida>} />
-        <Route path="ventas" element={<RutaProtegida roles={['ADMIN']}><HistorialVentas /></RutaProtegida>} />
-        <Route path="sucursales" element={<RutaProtegida roles={['ADMIN']}><Sucursales /></RutaProtegida>} />
-        <Route path="usuarios" element={<RutaProtegida roles={['ADMIN']}><Usuarios /></RutaProtegida>} />
+        <Route path="ofertas" element={<RutaProtegida roles={['ADMIN', 'CAJERO']}><Ofertas /></RutaProtegida>} />
+        <Route path="ventas" element={<RutaProtegida roles={['ADMIN', 'CAJERO']}><HistorialVentas /></RutaProtegida>} />
+        <Route path="sucursales" element={<SoloAdmin><Sucursales /></SoloAdmin>} />
+        <Route path="usuarios" element={<SoloAdmin><Usuarios /></SoloAdmin>} />
         <Route path="configuracion" element={<Configuracion />} />
       </Route>
 

@@ -34,3 +34,14 @@ export const sucursalesDisponibles = (prenda) =>
 
 export const unidadesDisponibles = (prenda) => sucursalesDisponibles(prenda)
   .reduce((total, sucursal) => total + Number(sucursal.cantidad || 0), 0);
+
+// Etiquetas recibidas del API: 20.00% OFF -> 20% OFF; 12.50% -> 12,5%.
+// El formato visual no cambia el porcentaje aplicado en el backend.
+export const etiquetaOferta = (texto) => String(texto ?? '').replace(
+  /(\d+(?:[.,]\d+)?)\s*%/g,
+  (coincidencia, porcentaje) => {
+    const numero = Number(porcentaje.replace(',', '.'));
+    if (!Number.isFinite(numero)) return coincidencia;
+    return `${numero.toLocaleString('es-MX', { maximumFractionDigits: 2 }).replace('.', ',')}%`;
+  },
+);

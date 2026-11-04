@@ -19,10 +19,13 @@ const fotoUrl = (ruta) => ruta?.startsWith('http') ? ruta : `${origen}${ruta || 
 export default function Inventario() {
   const { usuario } = useAuth();
   const admin = usuario?.rol === 'ADMIN';
+  const puedeEditarPrendas = admin || usuario?.rol === 'CAJERO';
   const [tab, setTab] = useState('consulta');
   const [opciones, setOpciones] = useState({ categorias: [], tallas: [], colores: [] });
   const [sucursales, setSucursales] = useState([]);
+  // Solo una sucursal activa por sesión, sin selector de sucursales.
   const [filtroSucursal, setFiltroSucursal] = useState('');
+  const sucursalActual = sucursales.find((s) => String(s.id_sucursal) === filtroSucursal);
   const [prendas, setPrendas] = useState([]);
   const [fotos, setFotos] = useState([]);
   const [camaraAbierta, setCamaraAbierta] = useState(false);
@@ -48,19 +51,31 @@ export default function Inventario() {
         api.get('/inventario/catalogos/colores'), api.get('/inventario/sucursales'),
       ]);
       setOpciones({ categorias: c.data.opciones, tallas: t.data.opciones, colores: co.data.opciones });
-      setSucursales(s.data.sucursales);
-      const defaultSucursal = admin ? '' : String(usuario?.id_sucursal || '');
-      setFiltroSucursal(defaultSucursal);
-      setForm((prev) => ({ ...prev, id_sucursal: String(s.data.sucursales[0]?.id_sucursal || '') }));
+      const sucursalesDisponibles = s.data.sucursales || [];
+      setSucursales(sucursalesDisponibles);
+      // ADMIN: primera sucursal de la lista. CAJERO: sucursal asignada a su cuenta.
+      // No se usa la opción "Todas las sucursales".
+      const idSucursal = admin
+        ? String(sucursalesDisponibles[0]?.id_sucursal || '')
+        : String(usuario?.id_sucursal || '');
+      setFiltroSucursal(idSucursal);
+      setForm((prev) => ({ ...prev, id_sucursal: idSucursal }));
     } catch (e) { setError(e.response?.data?.mensaje || 'No se pudo cargar la configuración de inventario'); }
     finally { setCargando(false); }
   }, [admin, usuario?.id_sucursal]);
   useEffect(() => { cargaInicial(); }, [cargaInicial]);
 
   const cargarPrendas = useCallback(async () => {
+    // Evitar consultar sin sucursal durante la carga inicial.
+    if (!filtroSucursal) { setPrendas([]); return; }
     try {
       setError('');
-      const params = filtroSucursal ? { id_sucursal: filtroSucursal } : {};
+      // Consultar las prendas de esta sucursal, incluidas las agotadas.
+      // El backend debe admitir incluir_agotadas y respetar los permisos del usuario.
+      const params = {
+        id_sucursal: filtroSucursal,
+        incluir_agotadas: 'true',
+      };
       const { data } = await api.get('/inventario/prendas', { params });
       setPrendas(data.prendas || []);
     } catch (e) { setError(e.response?.data?.mensaje || 'Error al consultar prendas'); }
@@ -224,7 +239,7 @@ export default function Inventario() {
   };
 
   const cambiarPublicacion = async (p) => {
-    if (!admin) return;
+    if (!puedeEditarPrendas) return;
     try {
       await api.patch(`/inventario/prendas/${p.id_prenda}/publicacion`, {
         publicar_catalogo: !p.publicar_catalogo,
@@ -235,7 +250,7 @@ export default function Inventario() {
 
   // Permite capturar, sustituir o quitar el código de barras de una prenda existente.
   const editarCodigoBarras = async (p) => {
-    if (!admin) return;
+    if (!puedeEditarPrendas) return;
     const respuesta = await Swal.fire({
       title: 'Código de barras',
       text: `Prenda: ${p.nombre}. Déjalo vacío si no tiene código.`,
@@ -268,8 +283,10 @@ export default function Inventario() {
   };
 
   const ajustarExistencia = async (p) => {
-    if (!admin) return;
-    if (!filtroSucursal) return Swal.fire('Selecciona una sucursal', 'Elige una sucursal específica antes de ajustar sus existencias.', 'info');
+    if (!puedeEditarPrendas) return;
+    // El stock siempre se ajusta en la sucursal activa, nunca de forma global.
+    const sucursalAjuste = filtroSucursal;
+    if (!sucursalAjuste) return Swal.fire('Sucursal no disponible', 'No hay una sucursal asignada para realizar ajustes.', 'info');
     const r = await Swal.fire({
       title: `Ajustar: ${p.nombre}`,
       input: 'number',
@@ -285,7 +302,7 @@ export default function Inventario() {
     if (!r.isConfirmed) return;
     try {
       await api.post(`/inventario/prendas/${p.id_prenda}/ajustar-stock`, {
-        id_sucursal: Number(filtroSucursal), diferencia: Number(r.value), observaciones: 'Ajuste desde inventario',
+        id_sucursal: Number(sucursalAjuste), diferencia: Number(r.value), observaciones: 'Ajuste desde inventario',
       });
       await cargarPrendas();
       Swal.fire({ icon: 'success', title: 'Stock actualizado', timer: 1200, showConfirmButton: false });
@@ -348,13 +365,10 @@ export default function Inventario() {
 
             <div className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
               <div className="min-w-0 sm:col-span-2">
-                <label className="ld-form-label">Sucursal <span className="text-[#FC4D84]">*</span></label>
-                <select value={form.id_sucursal} disabled={!admin} onChange={(e) => cambiar('id_sucursal', e.target.value)} className={input}>
-                  <option value="">Selecciona una sucursal</option>
-                  {sucursales.map((sucursal) => (
-                    <option key={sucursal.id_sucursal} value={sucursal.id_sucursal}>{sucursal.nombre}</option>
-                  ))}
-                </select>
+                <label className="ld-form-label">Sucursal predeterminada</label>
+                <p className="rounded-xl border border-[#F1E1E7] bg-[#FFF8FA] px-4 py-3 text-sm font-semibold text-[#806B75]">
+                  {sucursalActual?.nombre || (filtroSucursal ? `Sucursal #${filtroSucursal}` : 'Sin sucursal asignada')}
+                </p>
               </div>
               <div className="min-w-0 sm:col-span-2">
                 <label className="ld-form-label">Nombre de la prenda <span className="text-[#FC4D84]">*</span></label>
@@ -482,17 +496,12 @@ export default function Inventario() {
       ) : (
         <section className="space-y-4">
           <div className="ld-panel p-4 sm:p-5">
-            <div className="grid min-w-0 grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] xl:grid-cols-[minmax(0,1fr)_minmax(190px,280px)_auto_auto]">
+            <div className="grid min-w-0 grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
               <div className="min-w-0">
                 <label className="ld-form-label">Buscar por nombre, talla, color o código de barras</label>
                 <input className={input} value={busqueda} onChange={(e)=>setBusqueda(e.target.value)} placeholder="Nombre, código de barras, LDR..."/>
               </div>
-              {admin && <div className="min-w-0 sm:col-span-3 xl:col-span-1"><label className="ld-form-label">Sucursal</label>
-                <select className={input} value={filtroSucursal} onChange={(e)=>setFiltroSucursal(e.target.value)}>
-                  <option value="">Todas las sucursales</option>
-                  {sucursales.map((s)=><option key={s.id_sucursal} value={s.id_sucursal}>{s.nombre}</option>)}
-                </select>
-              </div>}
+              {/* La sucursal se define automáticamente al iniciar sesión. */}
               <button type="button" onClick={cargarPrendas} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-[#F0DAE2] bg-[#FFF8FA] px-3 text-[#FC4D84]" title="Actualizar">
                 <RefreshCw size={18}/><span className="text-xs font-semibold sm:hidden">Actualizar</span>
               </button>
@@ -530,7 +539,7 @@ export default function Inventario() {
                         </div>
                         <p className="flex items-center gap-1.5 break-all text-xs text-[#957D88]"><ScanBarcode size={15} className="shrink-0"/> Código de barras: {p.codigo_barras || 'Sin código'}</p>
                         <p className="text-xs text-[#957D88]">Catálogo: {p.publicar_catalogo && Number(p.cantidad)>0 && p.fotos?.length ? 'Visible' : 'No visible'}</p>
-                        {admin && <div className="flex flex-wrap gap-2 border-t border-[#F3E4E9] pt-3">
+                        {puedeEditarPrendas && <div className="flex flex-wrap gap-2 border-t border-[#F3E4E9] pt-3">
                           <button type="button" className="inline-flex items-center gap-1.5 rounded-lg bg-[#FC4D84] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#E83B73]" onClick={() => setPrendaEditando(p.id_prenda)}><Pencil size={15}/> Editar prenda</button>
                           <button type="button" className="rounded-lg bg-[#FFF0F5] px-3 py-2 text-xs font-bold text-[#D43B70]" onClick={()=>cambiarPublicacion(p)}>{p.publicar_catalogo ? 'Ocultar del catálogo' : 'Publicar'}</button>
                           <button type="button" className="rounded-lg border border-[#F3D7E1] px-3 py-2 text-xs font-bold text-[#8E6B79]" onClick={()=>ajustarExistencia(p)}>Ajustar stock</button>
@@ -543,14 +552,14 @@ export default function Inventario() {
               ) : (
                 <div className="ld-panel overflow-x-auto">
                   <table className="w-full min-w-[940px] text-left text-sm">
-                    <thead className="bg-[#FFF7F9] text-xs font-bold text-[#836D77]"><tr>{['Código interno','Código de barras','Prenda','Categoría','Talla','Color','Precio','Stock', ...(admin ? ['Acciones'] : [])].map((x)=><th key={x} className="px-4 py-3">{x}</th>)}</tr></thead>
+                    <thead className="bg-[#FFF7F9] text-xs font-bold text-[#836D77]"><tr>{['Código interno','Código de barras','Prenda','Categoría','Talla','Color','Precio','Stock', ...(puedeEditarPrendas ? ['Acciones'] : [])].map((x)=><th key={x} className="px-4 py-3">{x}</th>)}</tr></thead>
                     <tbody>{lista.map((p)=><tr key={p.id_prenda} className="border-t border-[#F5E9ED]">
                       <td className="px-4 py-3">LDR-{String(p.id_prenda).padStart(6,'0')}</td>
                       <td className="px-4 py-3 break-all">{p.codigo_barras || '—'}</td>
                       <td className="px-4 py-3 font-semibold">{p.nombre}</td>
                       <td className="px-4 py-3">{p.categoria}</td><td className="px-4 py-3">{p.talla}</td><td className="px-4 py-3">{p.color}</td>
                       <td className="px-4 py-3">{money(p.precio_venta)}</td><td className="px-4 py-3">{p.cantidad}</td>
-                      {admin && <td className="px-4 py-3"><button type="button" onClick={() => setPrendaEditando(p.id_prenda)} className="inline-flex items-center gap-1.5 rounded-lg bg-[#FFF0F5] px-3 py-2 text-xs font-bold text-[#CC376C] hover:bg-[#FFE2EC]"><Pencil size={15}/> Editar</button></td>}
+                      {puedeEditarPrendas && <td className="px-4 py-3"><button type="button" onClick={() => setPrendaEditando(p.id_prenda)} className="inline-flex items-center gap-1.5 rounded-lg bg-[#FFF0F5] px-3 py-2 text-xs font-bold text-[#CC376C] hover:bg-[#FFE2EC]"><Pencil size={15}/> Editar</button></td>}
                     </tr>)}</tbody>
                   </table>
                 </div>
@@ -558,7 +567,7 @@ export default function Inventario() {
         </section>
       )}
     </div>
-      {admin && prendaEditando && <EditarPrendaModal
+      {puedeEditarPrendas && prendaEditando && <EditarPrendaModal
         idPrenda={prendaEditando}
         opciones={opciones}
         fotoUrl={fotoUrl}

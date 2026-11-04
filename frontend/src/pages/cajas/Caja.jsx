@@ -13,9 +13,8 @@ const fecha = (f) => f ? new Date(f).toLocaleString('es-MX',{dateStyle:'medium',
 const input = 'w-full min-w-0 rounded-xl border border-[#ECD7E0] bg-white px-4 py-3 text-sm font-semibold text-[#40313B] outline-none focus:border-[#FC4D84] focus:ring-4 focus:ring-[#FC4D84]/10';
 const denoms = [1000,500,200,100,50,20,10,5,2,1,0.5];
 const tipos = [
-  ['ENTRADA','Entrada de efectivo'],['SALIDA','Salida de efectivo'],['GASTO','Gasto operativo'],
-  ['RETIRO','Retiro de efectivo'],['PAGO_PROVEEDOR','Pago a proveedor'],
-  ['AJUSTE_POSITIVO','Ajuste positivo'],['AJUSTE_NEGATIVO','Ajuste negativo'],
+  ['ENTRADA','Entrada de efectivo'],['GASTO','Gasto operativo'],
+  ['RETIRO','Retiro de efectivo'],
 ];
 const mensaje = (e) => e.response?.data?.mensaje || 'Ocurrió un error al realizar la operación.';
 

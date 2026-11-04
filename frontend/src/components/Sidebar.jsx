@@ -27,7 +27,7 @@ import './Sidebar.css';
 // MENÚ PRINCIPAL LUDAROPE POS
 // ================================================
 // ADMIN: acceso a los módulos administrativos.
-// CAJERO: punto de venta, inventario y caja.
+// CAJERO: punto de venta, inventario, historial de ventas y caja.
 //
 // Los permisos del backend deben validarse
 // independientemente de los enlaces visibles.
@@ -86,13 +86,13 @@ const SECCIONES = [
         to: '/app/ventas',
         texto: 'Historial de ventas',
         icono: ReceiptText,
-        roles: ['ADMIN'],
+        roles: ['ADMIN', 'CAJERO'],
       },
       {
         to: '/app/ofertas',
         texto: 'Ofertas y promociones',
         icono: BadgePercent,
-        roles: ['ADMIN'],
+        roles: ['ADMIN', 'CAJERO'],
       },
       {
         to: '/app/caja',
